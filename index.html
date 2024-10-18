@@ -1,270 +1,312 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Snake Game</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris</title>
     <style>
         body {
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             height: 100vh;
             margin: 0;
-            background-color: #1a1a1a;
-            font-family: 'Arial', sans-serif;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+            color: #fff;
         }
-        #game-container {
-            position: relative;
-            box-shadow: 0 0 20px rgba(76, 175, 80, 0.3);
+        #container {
+            display: flex;
+            gap: 20px;
         }
-        #game-board {
-            border: 2px solid #4CAF50;
-            background-color: #001800;
+        #game {
+            display: grid;
+            grid-template-rows: repeat(20, 30px);
+            grid-template-columns: repeat(10, 30px);
+            gap: 1px;
+            background-color: #333;
+            border: 5px solid #0f9;
         }
-        #score {
-            color: #4CAF50;
-            font-size: 24px;
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #444;
+        }
+        .active {
+            background-color: #0f9;
+        }
+        .piece-I { background-color: #0ff; }
+        .piece-O { background-color: #ff0; }
+        .piece-T { background-color: #f0f; }
+        .piece-Z { background-color: #f00; }
+        .piece-S { background-color: #0f0; }
+        .piece-L { background-color: #f90; }
+        .piece-J { background-color: #00f; }
+        #info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 1.5rem;
+        }
+        .scoreboard {
             margin-bottom: 20px;
-            text-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
         }
-        #start-message {
+        .paused {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            color: #4CAF50;
-            font-size: 24px;
-            text-align: center;
-            z-index: 1;
-            text-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+            font-size: 3rem;
+            color: #f00;
         }
-        .hidden {
-            display: none;
+        button {
+            background-color: #0f9;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1rem;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #0c7;
         }
     </style>
 </head>
 <body>
-    <div id="score">Score: 0</div>
-    <div id="game-container">
-        <div id="start-message">Press SPACE to start<br>Use WASD to control</div>
-        <canvas id="game-board" width="800" height="600"></canvas>
+
+<div id="container">
+    <div id="game"></div>
+    <div id="info">
+        <div class="scoreboard">
+            <div>Score: <span id="score">0</span></div>
+            <div>High Score: <span id="highScore">0</span></div>
+        </div>
+        <button id="startBtn">Start Game</button>
+        <button id="restartBtn" style="display:none;">Restart Game</button>
     </div>
+</div>
+<div class="paused" id="paused" style="display:none;">Paused</div>
 
-    <script>
-        const canvas = document.getElementById('game-board');
-        const ctx = canvas.getContext('2d');
-        const startMessage = document.getElementById('start-message');
-        const scoreElement = document.getElementById('score');
-
-        const gridSize = 20;
-        const tileCount = canvas.width / gridSize;
-        const tileCountY = canvas.height / gridSize;
-
-        let snake = [];
-        let food = { x: 0, y: 0 };
-        let dx = 0;
-        let dy = 0;
-        let score = 0;
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const game = document.getElementById('game');
+        const pausedText = document.getElementById('paused');
+        const scoreDisplay = document.getElementById('score');
+        const highScoreDisplay = document.getElementById('highScore');
+        const startBtn = document.getElementById('startBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const rows = 20;
+        const cols = 10;
+        const board = Array.from({ length: rows }, () => Array(cols).fill(0));
+        let gameInterval;
+        let isPaused = false;
         let gameStarted = false;
-        let gameLoop;
+        let currentPiece, currentX, currentY, currentRotation, currentColor;
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') || 0;
 
-        function initGame() {
-            snake = [
-                { x: 10, y: 10 },
-                { x: 9, y: 10 },
-                { x: 8, y: 10 }
-            ];
+        highScoreDisplay.textContent = highScore;
+
+        const pieces = [
+            { shape: [[1, 1, 1, 1]], color: 'piece-I' }, // I
+            { shape: [[1, 1], [1, 1]], color: 'piece-O' }, // O
+            { shape: [[0, 1, 0], [1, 1, 1]], color: 'piece-T' }, // T
+            { shape: [[1, 1, 0], [0, 1, 1]], color: 'piece-Z' }, // Z
+            { shape: [[0, 1, 1], [1, 1, 0]], color: 'piece-S' }, // S
+            { shape: [[1, 1, 1], [1, 0, 0]], color: 'piece-L' }, // L
+            { shape: [[1, 1, 1], [0, 0, 1]], color: 'piece-J' }, // J
+        ];
+
+        function createBoard() {
+            game.innerHTML = '';
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    game.appendChild(cell);
+                }
+            }
+        }
+
+        function drawBoard() {
+            const cells = game.querySelectorAll('.cell');
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const index = row * cols + col;
+                    cells[index].className = 'cell';
+                    if (board[row][col] !== 0) {
+                        cells[index].classList.add(board[row][col]);
+                    }
+                }
+            }
+        }
+
+        function drawPiece() {
+            for (let row = 0; row < currentPiece.length; row++) {
+                for (let col = 0; col < currentPiece[row].length; col++) {
+                    if (currentPiece[row][col]) {
+                        const index = (currentY + row) * cols + (currentX + col);
+                        game.children[index].classList.add(currentColor);
+                    }
+                }
+            }
+        }
+
+        function spawnPiece() {
+            const nextPiece = pieces[Math.floor(Math.random() * pieces.length)];
+            currentPiece = nextPiece.shape;
+            currentColor = nextPiece.color;
+            currentX = 4;
+            currentY = 0;
+            currentRotation = 0;
+
+            if (collision()) {
+                alert('Game Over');
+                updateHighScore();
+                resetGame();
+            }
+        }
+
+        function collision(offsetX = 0, offsetY = 0, piece = currentPiece) {
+            for (let row = 0; row < piece.length; row++) {
+                for (let col = 0; col < piece[row].length; col++) {
+                    if (piece[row][col] &&
+                        (board[currentY + row + offsetY] &&
+                            board[currentY + row + offsetY][currentX + col + offsetX]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function rotatePiece() {
+            const rotatedPiece = currentPiece[0].map((_, index) =>
+                currentPiece.map(row => row[index]).reverse()
+            );
+            if (!collision(0, 0, rotatedPiece)) {
+                currentPiece = rotatedPiece;
+            }
+        }
+
+        function mergePiece() {
+            for (let row = 0; row < currentPiece.length; row++) {
+                for (let col = 0; col < currentPiece[row].length; col++) {
+                    if (currentPiece[row][col]) {
+                        board[currentY + row][currentX + col] = currentColor;
+                    }
+                }
+            }
+        }
+
+        function clearRows() {
+            let rowsCleared = 0;
+            for (let row = rows - 1; row >= 0; row--) {
+                if (board[row].every(cell => cell !== 0)) {
+                    board.splice(row, 1);
+                    board.unshift(Array(cols).fill(0));
+                    rowsCleared++;
+                }
+            }
+            if (rowsCleared > 0) {
+                score += rowsCleared * 100;
+                scoreDisplay.textContent = score;
+            }
+        }
+
+        function movePiece(offsetX, offsetY) {
+            if (!collision(offsetX, offsetY)) {
+                currentX += offsetX;
+                currentY += offsetY;
+            } else if (offsetY > 0) {
+                mergePiece();
+                clearRows();
+                spawnPiece();
+            }
+        }
+
+        function resetGame() {
+            clearInterval(gameInterval);
+            for (let row = 0; row < rows; row++) {
+                board[row].fill(0);
+            }
             score = 0;
-            scoreElement.textContent = `Score: ${score}`;
-            
-            const directions = [
-                { dx: 1, dy: 0 },
-                { dx: -1, dy: 0 },
-                { dx: 0, dy: 1 },
-                { dx: 0, dy: -1 }
-            ];
-            const randomDir = directions[Math.floor(Math.random() * directions.length)];
-            dx = randomDir.dx;
-            dy = randomDir.dy;
-
-            placeFood();
-            if (gameLoop) clearInterval(gameLoop);
-            gameLoop = setInterval(gameStep, 100);
-            gameStarted = true;
-            startMessage.classList.add('hidden');
-        }
-
-        function gameStep() {
-            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
-            
-            if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCountY) {
-                gameOver();
-                return;
-            }
-            
-            for (let i = 0; i < snake.length; i++) {
-                if (head.x === snake[i].x && head.y === snake[i].y) {
-                    gameOver();
-                    return;
-                }
-            }
-            
-            snake.unshift(head);
-            
-            if (head.x === food.x && head.y === food.y) {
-                score += 10;
-                scoreElement.textContent = `Score: ${score}`;
-                placeFood();
-            } else {
-                snake.pop();
-            }
-            
-            draw();
-        }
-
-        function gameOver() {
-            clearInterval(gameLoop);
+            scoreDisplay.textContent = score;
             gameStarted = false;
-            startMessage.textContent = `Game Over! Score: ${score}\nPress SPACE to restart`;
-            startMessage.classList.remove('hidden');
+            drawBoard();
+            restartBtn.style.display = 'none';
+            startBtn.style.display = 'inline-block';
         }
 
-        function placeFood() {
-            food.x = Math.floor(Math.random() * tileCount);
-            food.y = Math.floor(Math.random() * tileCountY);
-            
-            for (let segment of snake) {
-                if (food.x === segment.x && food.y === segment.y) {
-                    placeFood();
-                    return;
-                }
+        function startGame() {
+            if (!gameStarted) {
+                gameStarted = true;
+                spawnPiece();
+                gameInterval = setInterval(() => {
+                    if (!isPaused) {
+                        movePiece(0, 1);
+                        drawBoard();
+                        drawPiece();
+                    }
+                }, 500);
+                restartBtn.style.display = 'inline-block';
+                startBtn.style.display = 'none';
             }
         }
 
-        function drawSnakeSegment(x, y, isHead) {
-            const segSize = gridSize - 4;
-            const xPos = x * gridSize + 2;
-            const yPos = y * gridSize + 2;
-            
-            // Create gradient
-            const gradient = ctx.createRadialGradient(
-                xPos + segSize/2, yPos + segSize/2, 0,
-                xPos + segSize/2, yPos + segSize/2, segSize
-            );
-            gradient.addColorStop(0, isHead ? '#90EE90' : '#66BB6A');
-            gradient.addColorStop(1, '#2E7D32');
-            
-            // Draw glow
-            ctx.shadowColor = '#4CAF50';
-            ctx.shadowBlur = 10;
-            
-            // Draw rounded rectangle
-            ctx.beginPath();
-            ctx.roundRect(xPos, yPos, segSize, segSize, 5);
-            ctx.fillStyle = gradient;
-            ctx.fill();
-            
-            // Reset shadow for next drawings
-            ctx.shadowBlur = 0;
-            
-            // Draw eyes if it's the head
-            if (isHead) {
-                const eyeSize = 3;
-                const eyeOffset = 5;
-                ctx.fillStyle = '#000000';
-                
-                // Adjust eye positions based on direction
-                let leftEyeX, leftEyeY, rightEyeX, rightEyeY;
-                if (dx === 1) { // moving right
-                    leftEyeX = xPos + segSize - eyeOffset;
-                    rightEyeX = leftEyeX;
-                    leftEyeY = yPos + eyeOffset;
-                    rightEyeY = yPos + segSize - eyeOffset;
-                } else if (dx === -1) { // moving left
-                    leftEyeX = xPos + eyeOffset;
-                    rightEyeX = leftEyeX;
-                    leftEyeY = yPos + eyeOffset;
-                    rightEyeY = yPos + segSize - eyeOffset;
-                } else if (dy === 1) { // moving down
-                    leftEyeX = xPos + eyeOffset;
-                    rightEyeX = xPos + segSize - eyeOffset;
-                    leftEyeY = yPos + segSize - eyeOffset;
-                    rightEyeY = leftEyeY;
-                } else { // moving up
-                    leftEyeX = xPos + eyeOffset;
-                    rightEyeX = xPos + segSize - eyeOffset;
-                    leftEyeY = yPos + eyeOffset;
-                    rightEyeY = leftEyeY;
-                }
-                
-                ctx.beginPath();
-                ctx.arc(leftEyeX, leftEyeY, eyeSize, 0, Math.PI * 2);
-                ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
-                ctx.fill();
+        function restartGame() {
+            resetGame();
+            startGame();
+        }
+
+        function pauseGame() {
+            if (isPaused) {
+                pausedText.style.display = 'none';
+                isPaused = false;
+            } else {
+                pausedText.style.display = 'block';
+                isPaused = true;
             }
         }
 
-        function draw() {
-            ctx.fillStyle = '#001800';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw snake
-            snake.forEach((segment, index) => {
-                drawSnakeSegment(segment.x, segment.y, index === 0);
-            });
-            
-            // Draw food
-            const foodSize = gridSize - 4;
-            const foodX = food.x * gridSize + 2;
-            const foodY = food.y * gridSize + 2;
-            
-            // Food glow
-            ctx.shadowColor = '#FF0000';
-            ctx.shadowBlur = 15;
-            
-            // Food gradient
-            const foodGradient = ctx.createRadialGradient(
-                foodX + foodSize/2, foodY + foodSize/2, 0,
-                foodX + foodSize/2, foodY + foodSize/2, foodSize
-            );
-            foodGradient.addColorStop(0, '#FF6B6B');
-            foodGradient.addColorStop(1, '#DC0000');
-            
-            ctx.beginPath();
-            ctx.roundRect(foodX, foodY, foodSize, foodSize, 5);
-            ctx.fillStyle = foodGradient;
-            ctx.fill();
-            
-            // Reset shadow
-            ctx.shadowBlur = 0;
+        function updateHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+                highScoreDisplay.textContent = highScore;
+            }
         }
 
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                initGame();
-                return;
+            if (e.code === 'ArrowLeft') {
+                movePiece(-1, 0);
+            } else if (e.code === 'ArrowRight') {
+                movePiece(1, 0);
+            } else if (e.code === 'ArrowDown') {
+                movePiece(0, 1);
+            } else if (e.code === 'ArrowUp') {
+                rotatePiece();
+            } else if (e.code === 'Space') {
+                startGame();
+            } else if (e.code === 'Escape') {
+                pauseGame();
             }
-            
-            if (!gameStarted) return;
-            
-            switch(e.key.toLowerCase()) {
-                case 'w':
-                    if (dy === 0) { dx = 0; dy = -1; }
-                    break;
-                case 's':
-                    if (dy === 0) { dx = 0; dy = 1; }
-                    break;
-                case 'a':
-                    if (dx === 0) { dx = -1; dy = 0; }
-                    break;
-                case 'd':
-                    if (dx === 0) { dx = 1; dy = 0; }
-                    break;
-            }
+            drawBoard();
+            drawPiece();
         });
 
-        draw();
-    </script>
+        startBtn.addEventListener('click', () => {
+            startGame();
+        });
+
+        restartBtn.addEventListener('click', () => {
+            restartGame();
+        });
+
+        createBoard();
+    });
+</script>
+
 </body>
 </html>
